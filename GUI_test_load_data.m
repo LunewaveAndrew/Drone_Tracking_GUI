@@ -1,5 +1,6 @@
 clear all;close all;clc;
 
+
 set(0, 'DefaultUIControlFontSize', 12);
 
 %%%%%%%%  init GUI  %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -42,13 +43,14 @@ if(frequency_lib==2456)
 elseif(frequency_lib==2360)
     libpath = './Calibartion_Library_2p36GHz';
 end
-load('my_library_data.mat') 
 
 % ================= LOAD CALIBRATION LIBRARY =================
 lib_cache = fullfile(libpath, 'cached_library_data.mat');
+%lib_cache = 'C:\Users\Andrew\Documents\Lunewave Project\1107 Data\0.915GHz_cached_library_data.mat';
 if isfile(lib_cache)
     load(lib_cache, 'Lib_Mag', 'Lib_Phase', 'Lib_Complex');
 end
+load('my_library_data.mat') 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 algorithm_select='MUSIC';   % 'CAPON'  'MUSIC'
@@ -65,23 +67,23 @@ N_frame=num_frame;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 file_start=1;
-file_end=203;
+file_end=1000;
 
-% path=['U:\Direction_Finding\20251117_MaranaDroneTesting_32.45177N_111.21107W_Heading_138SE\Circle_1_offset_-7.5\'];
-path=['U:\Direction_Finding\20251117_MaranaDroneTesting_32.45177N_111.21107W_Heading_138SE\back_az=180_offset_-6\'];
-% path=['U:\Direction_Finding\20251117_MaranaDroneTesting_32.45177N_111.21107W_Heading_138SE\forward_az=0_offset_-270\'];
-% path=['U:\Direction_Finding\20251117_MaranaDroneTesting_32.45177N_111.21107W_Heading_138SE\right_az=-90_offset_-30\'];
-% path=['U:\Direction_Finding\20251117_MaranaDroneTesting_32.45177N_111.21107W_Heading_138SE\left_az=90_offset_-14.5\'];
+path=['C:\Users\Andrew\Documents\Lunewave Project\20251117_MaranaDroneTesting_32.45177N_111.21107W_Heading_138SE\Circle_2_offset_-10\'];
 
+u = udpport("datagram","IPV4");
+udp_ip = "127.0.0.1";
+udp_port = 9999;
 
 t_offset=-7.5;
 M = readmatrix([path 'Session_Log.txt']);
+file_end = min(file_end, M(end,1));
 antenna_time = NaN(1, M(end, 1));
 antenna_time(M(:, 1)) = (M(:, 2) - M(1, 2))/1000 + t_offset;
+%antenna_time = file_start:file_end; 
 
 DF_angle=NaN(file_end,2);
-range_estimate_based_amp=NaN(file_end,1);
-
+range_estimate_based_amp = NaN(file_end,1);
 
 for ang_ind=file_start:file_end
 
@@ -98,6 +100,7 @@ fileID = fopen([path   num2str(ang_ind,'%04d') '.BIN'], 'r', 'ieee-le');
 
 if (fileID~=-1)
 C = fread(fileID, Inf, 'int16');
+fclose(fileID);
 
 C0 = reshape(C,[2,length(C)/2]).';
 L_C0=length(C0);
@@ -174,7 +177,10 @@ end
     time_axis=[0:num_frame-1]*1/fre_sample*1024*1e6;  % Time axis (us)
     % fre_axis=fre/1e9+2.277;               % Frequency axis (GHz), with LO offset
     fre_axis=fre/1e9-fre_sample/1e9/2;               % Frequency axis (GHz), with LO offset
-if(1)    
+    f_lo_GHz = 2400+fre_axis(roi_1)*1000;
+    f_hi_GHz = 2400+fre_axis(roi_2)*1000;
+
+if(0)    
     for rx=3:3
         test_STFT=abs(FFT_full(:,:,rx));  % Magnitude spectrogram for RX
         
@@ -197,7 +203,7 @@ if(1)
             cb = colorbar;               
             ylabel(cb, 'Magnitude (dB)');    
             caxis([20 90]);              % Dynamic range for plotting
-            title(sprintf('Spectrogram of RX %d (Frame %d)', rx, ang_ind ));
+            title(sprintf('Spectrogram of RX %d', rx));
 
             % 
             % figure(2)
@@ -322,6 +328,7 @@ end
     length_az=length(AZ_table);
     
     
+
     
     % ================= INITIALIZE RESULT ARRAYS =================
     AZ_result=[];
@@ -370,7 +377,7 @@ end
                 abs_spectrum=abs(Pmusic);
     
                 % Plot MUSIC spectrum if only 1 ROI frequency
-                if(length(roi_freq)==1)
+                if(plot_flag && length(roi_freq)==1)
                     figure;
                     imagesc(AZ_table, EL_table, Pmusic_dB);
                     set(gca, 'YDir', 'normal');
@@ -408,7 +415,7 @@ end
                 abs_spectrum=abs(PCapon);
                 PCapon_dB = mag2db(abs(PCapon));
                 
-                if(length(roi_freq)==1)
+                if(plot_flag && length(roi_freq)==1)
                     figure;
                     imagesc(AZ_table, EL_table, PCapon_dB);
                     set(gca, 'YDir', 'normal');
@@ -441,7 +448,7 @@ end
                 
                 abs_spectrum=reshape(abs(coe),[length_az length_el]);
                 
-                if(length(roi_freq)==1)
+                if(plot_flag && length(roi_freq)==1)
                     figure();
                     imagesc(EL_table, AZ_table, mag2db(abs_spectrum));
                     set(gca, 'YDir', 'normal');
@@ -569,6 +576,7 @@ end
     
     range_estimate_based_amp(ang_ind)=range_estimate;
     %%%%%%%%%%%%%%%%%%range base amplitude estimation%%%%%%%%%%%%%%%%%%%%%
+
     if ~isempty(AZ_result)
         final_AZ=median(AZ_result);
         final_AZ_ITP=median(AZ_result_itp);
@@ -619,53 +627,81 @@ end
             trail(1, :, 1) = [X_plot, Y_plot];
             trail(1, :, 2) = [X_plot2, Y_plot2];
             
-            figure(1)
-            subplot('Position',[0.05 0.2 0.25 0.63]);
-
-            % hold on;
-            plot(X_plot,Y_plot,'xk',[0,X_plot],[0,Y_plot],'r:','MarkerSize',12,'Linewidth',2);
-            hold on
-            % scatter(squeeze(trail(:, 1, 1)),squeeze(trail(:, 2, 1)), 36, RGB, 'filled', 'MarkerFaceAlpha', 'flat', 'AlphaData', C_norm);
-            for i = 1:trail_length - 1
-                if ~(isnan(trail(i:i+1, :, 1)))
-                    plot([trail(i, 1, 1) trail(i+1, 1, 1)],[trail(i, 2, 1) trail(i+1, 2, 1)],'Color',[1 0 0 C_norm(i)],'LineWidth',2);
-                end
-            end
-            hold off
-            grid on;
-            xlim([-1.5 1.5]);
-            ylim([-1.5 1.5]);
-            xlabel('X (m)');ylabel('Y (m)');
-
-            
-            subplot('Position',[0.35 0.2 0.25 0.63]);
-
-            % hold on;
-            plot(X_plot2,Y_plot2,'xk',[0,X_plot2],[0,Y_plot2],'r:','MarkerSize',12,'Linewidth',2);
-            hold on
-            % scatter(squeeze(trail(:, 1, 2)),squeeze(trail(:, 2, 2)), 36, RGB, 'filled', 'MarkerFaceAlpha', 'flat', 'AlphaData', C_norm);
-            for i = 1:trail_length - 1
-                if ~(isnan(trail(i:i+1, :, 2)))
-                    plot([trail(i, 1, 2) trail(i+1, 1, 2)],[trail(i, 2, 2) trail(i+1, 2, 2)],'Color',[1 0 0 C_norm(i)],'LineWidth',2);
-                end
-            end            
-            hold off
-            grid on;
-            xlim([-1.5 1.5]);
-            ylim([-1.5 1.5]);
-            xlabel('X (m)');ylabel('Z (m)');
+            % figure(1)
+            % subplot('Position',[0.05 0.2 0.25 0.63]);
+            % 
+            % % hold on;
+            % plot(X_plot,Y_plot,'xk',[0,X_plot],[0,Y_plot],'r:','MarkerSize',12,'Linewidth',2);
+            % hold on
+            % % scatter(squeeze(trail(:, 1, 1)),squeeze(trail(:, 2, 1)), 36, RGB, 'filled', 'MarkerFaceAlpha', 'flat', 'AlphaData', C_norm);
+            % for i = 1:trail_length - 1
+            %     if ~(isnan(trail(i:i+1, :, 1)))
+            %         plot([trail(i, 1, 1) trail(i+1, 1, 1)],[trail(i, 2, 1) trail(i+1, 2, 1)],'Color',[1 0 0 C_norm(i)],'LineWidth',2);
+            %     end
+            % end
+            % hold off
+            % grid on;
+            % xlim([-1.5 1.5]);
+            % ylim([-1.5 1.5]);
+            % xlabel('X (m)');ylabel('Y (m)');
+            % 
+            % 
+            % subplot('Position',[0.35 0.2 0.25 0.63]);
+            % 
+            % % hold on;
+            % plot(X_plot2,Y_plot2,'xk',[0,X_plot2],[0,Y_plot2],'r:','MarkerSize',12,'Linewidth',2);
+            % hold on
+            % % scatter(squeeze(trail(:, 1, 2)),squeeze(trail(:, 2, 2)), 36, RGB, 'filled', 'MarkerFaceAlpha', 'flat', 'AlphaData', C_norm);
+            % for i = 1:trail_length - 1
+            %     if ~(isnan(trail(i:i+1, :, 2)))
+            %         plot([trail(i, 1, 2) trail(i+1, 1, 2)],[trail(i, 2, 2) trail(i+1, 2, 2)],'Color',[1 0 0 C_norm(i)],'LineWidth',2);
+            %     end
+            % end            
+            % hold off
+            % grid on;
+            % xlim([-1.5 1.5]);
+            % ylim([-1.5 1.5]);
+            % xlabel('X (m)');ylabel('Z (m)');
 
             % fontsize(12, "points");
             
             DF_angle(ang_ind,1)=final_AZ_ITP;
             DF_angle(ang_ind,2)=final_EL_ITP;
+            
+            t = antenna_time(ang_ind);  % seconds (from your Session_Log)
+            msgStruct = struct( ...
+              'az', final_AZ_ITP, ...
+              'el', final_EL_ITP, ...
+              'frame', ang_ind, ...
+              't', t, ...
+              'cfar_med', median_CFAR_number, ...
+              'valid', true, ...
+              'roi_f_lo_GHz', f_lo_GHz, ...
+              'roi_f_hi_GHz', f_hi_GHz ...
+            );
+            
+            if isfinite(range_estimate)
+                msgStruct.range_m = range_estimate;
+            end
+            
+            msg = jsonencode(msgStruct);
+            write(u, uint8(msg), udp_ip, udp_port);
+
 
         else
             fprintf('No drone signal \n');
+            t = antenna_time(ang_ind);
+            msgStruct = struct('frame', ang_ind, 't', t, 'valid', false, 'reason', 'low_cfar');
+            msg = jsonencode(msgStruct);
+            write(u, uint8(msg), udp_ip, udp_port);
          end    
     else
     
         fprintf('No detection \n');
+        t = antenna_time(ang_ind);
+        msgStruct = struct('frame', ang_ind, 't', t, 'valid', false, 'reason', 'no_detection');
+        msg = jsonencode(msgStruct);
+        write(u, uint8(msg), udp_ip, udp_port);
     end
 
 
@@ -675,7 +711,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-pause(0.3)
+%pause(0.3)
 
 frequency=str2num(c_fre.String);
 fprintf( ['ang_ind = ' num2str(ang_ind)  '\n'] );
@@ -684,7 +720,7 @@ fprintf( ['ang_ind = ' num2str(ang_ind)  '\n'] );
 end
 end
 
-% save([path 'DF_angle_MUSIC.m'], 'DF_angle');
+save([path 'DF_angle_MUSIC.m'], 'DF_angle');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % load([path 'DF_angle.m']);
@@ -693,11 +729,12 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-        DF_angle=DF_angle(1:ang_ind,:);
-        tmp1=(DF_angle(:,1)<-100);
-        DF_angle(tmp1,1)=DF_angle(tmp1,1)+360;
+DF_angle=DF_angle(1:ang_ind,:);
+tmp1=(DF_angle(:,1)<-100);
+DF_angle(tmp1,1)=DF_angle(tmp1,1)+360;
 
- figure(100)
+ %{
+figure(100)
         subplot(1,2,1)
         plot(antenna_time(1:ang_ind),DF_angle(:,1),'o')
         grid on;hold on;
@@ -724,50 +761,4 @@ end
 
         file_all_number=file_end-file_start;
         drone_transmitting_rate=(ang_ind-length(file_ind(tmp)))/file_all_number
-
-    figure(101)
-            
-        plot(antenna_time(1:ang_ind),range_estimate_based_amp(:,1),'o')
-        grid on;hold on;
-        xlabel('Time (s)');
-        ylabel('Range (m)');             
-        title(sprintf('Estimated Range based amplitude'));
-        % xlim([antenna_time(file_start) antenna_time(ang_ind)]);
-        ylim([-100 100]);
-        
-        
-        tmp=isnan(range_estimate_based_amp(:,1));
-        file_ind=[1:ang_ind];
-        plot(antenna_time(tmp),-0*ones(length(file_ind(tmp)),1),'ro');
-
-%%%%%%%%%%%%%  load drone location  %%%%%%%%%%%%%%%%%%%%%
-% 
-% load([path 'Drone_location.mat']);
-% drone_time_offset=33.079-10.4;
-% drone_az_offset=8.0914+39.752;
-% 
-%  figure(100)
-%  set(gcf, 'Position',  [200, 100, 1000, 400]);
-%         subplot(1,2,1)
-%         plot(data.time+drone_time_offset,drone_az+drone_az_offset,'.k')
-%         grid on;hold on;
-%         xlabel('Time (s)');
-%         ylabel('AZ angle (deg)');             
-%         title(sprintf('Drone AZ angle'));
-%         xlim([antenna_time(file_start) antenna_time(ang_ind)]);
-% 
-%         subplot(1,2,2)
-%         plot(data.time+drone_time_offset,drone_el,'.k')
-%         grid on;hold on;
-%         xlabel('Time (s)');
-%         ylabel('EL angle (deg)');             
-%         title(sprintf('Drone EL angle'));
-%         xlim([antenna_time(file_start) antenna_time(ang_ind)]);
-
-
-
-
-
-
-
-
+%}
