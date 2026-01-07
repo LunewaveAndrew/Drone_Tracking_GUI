@@ -1,0 +1,648 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Map Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <style>
+      html, body, #map { height: 100%; margin: 0; }
+
+      .panel{
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 1000;
+        background: rgba(255,255,255,0.92);
+        padding: 8px 8px 6px;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        font-size: 12px;
+        line-height: 1.05;
+        display: inline-block;
+        width: fit-content;
+      }
+
+      .panel b{
+        display: block;
+        font-size: 13px;
+        margin-bottom: 4px;
+      }
+
+      .panel label{
+        display: block;
+        margin: 2px 0 0;
+      }
+
+      .panel input{
+        display: block;
+        margin-top: 2px;
+        padding: 4px 6px;
+        box-sizing: border-box;
+        width: 70px;
+      }
+
+      .panel button{
+        display: block;
+        margin-top: 2px;
+        padding: 4px 4px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .latlon{
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 2px;
+        margin-top: 2px;
+      }
+
+      .latlon label{ margin: 0; }
+      .latlon input{ width: 110px; }
+
+      .azstatus{
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 2px;
+        margin-top: 2px;
+      }
+
+      .azstatus label{ margin: 0; }
+      #az { width: 50px; }
+      #status { width: 170px; }
+
+      #len  { width: 60px; }
+      #freq { width: 160px; }
+
+      .lenfreq{
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 2px;
+        margin-top: 2px;
+      }
+
+      .lenfreq label{ margin: 0; }
+      .lenfreq input{ width: 110px; }
+
+      .err{
+        color: #b00020;
+        margin-top: 2px;
+        min-height: 14px;
+        font-size: 11px;
+      }
+
+      #status.st-wait {
+        background: #eceff1;
+        border-color: #607d8b;
+        color: #455a64;
+      }
+      #status.st-live {
+        background: #e8f5e9;
+        border-color: #2e7d32;
+        color: #1b5e20;
+      }
+      #status.st-nodet {
+        background: #fff8e1;
+        border-color: #f9a825;
+        color: #8d6e00;
+      }
+      #status.st-disc {
+        background: #ffebee;
+        border-color: #c62828;
+        color: #b71c1c;
+      }
+
+      .lenmode{
+        margin-top: 2px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        user-select: none;
+      }
+      .lenmode input{ width: auto; }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+
+    <div class="panel">
+      <div class="latlon">
+        <label>
+          Latitude
+          <input id="lat" type="number" step="0.000001" />
+        </label>
+
+        <label>
+          Longitude
+          <input id="lon" type="number" step="0.000001" />
+        </label>
+      </div>
+
+      <div style="display:flex; gap:2px; flex-wrap:wrap; margin-top:2px;">
+        <button id="update">Manual update</button>
+        <button id="useGpsOnce">GPS (set once)</button>
+      </div>
+
+      <div style="display:flex; gap:2px; flex-wrap:wrap; margin-top:2px;">
+        <button id="useGps">GPS (continuous)</button>
+        <button id="stopGps">Stop GPS</button>
+      </div>
+
+      <div class="lenfreq">
+        <label>
+          Arrow (m)
+          <input id="len" type="number" min="1" step="1" />
+        </label>
+
+        <label>
+          Frequency range (MHz)
+            <input id="freq" type="text" readonly />
+        </label>
+      </div>
+
+      <div class="lenmode">
+        <input id="autoLen" type="checkbox" />
+        <label for="autoLen">Range-based arrow length</label>
+      </div>
+
+      <label>
+        Track count
+        <input id="trailN" type="number" min="0" max="30" step="1" />
+      </label>
+
+      <div class="azstatus">
+        <label>
+          Azimuth
+          <input id="az" type="text" readonly />
+        </label>
+
+        <label>
+          Status
+          <input id="status" type="text" readonly />
+        </label>
+      </div>
+
+      <div class="err" id="err"></div>
+    </div>
+    <script>
+      // Default sensor location
+      let sensor = [32.45135453652968, -111.21102583108258];
+
+      const map = L.map("map", { maxZoom: 22 }).setView(sensor, 19);
+
+      L.tileLayer(
+        "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { maxNativeZoom: 19, maxZoom: 22, attribution: "Tiles © Esri" }
+      ).addTo(map);
+
+      // Sensor dot
+      const sensorMarker = L.circleMarker(sensor, {
+        radius: 3,
+        color: "black",
+        weight: 2,
+        fillColor: "black",
+        fillOpacity: 1
+      }).addTo(map);
+
+      let arrowLengthM = 25;
+      const AUTO_LEN_MIN_M = 10;
+      const AUTO_LEN_MAX_M = 120;
+
+      function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+      let lastBearingDeg = 0;
+
+      function makeArrowIcon(rotationDeg, color = "red") {
+        const SIZE = 14;
+        const VIEWBOX = 24;
+
+        const TIP_Y = 2;
+        const tipFrac = TIP_Y / VIEWBOX;
+        const tipPx = SIZE * tipFrac;
+
+        const svg = `
+          <svg width="${SIZE}" height="${SIZE}" viewBox="0 0 ${VIEWBOX} ${VIEWBOX}">
+            <polygon points="12,2 22,22 12,17 2,22" fill="${color}" stroke="${color}" stroke-width="1" />
+          </svg>
+        `;
+        return L.divIcon({
+          className: "",
+          html: `<div style="
+            width:${SIZE}px;height:${SIZE}px;
+            transform: rotate(${rotationDeg}deg);
+            transform-origin: 50% ${(tipFrac * 100).toFixed(3)}%;
+          ">${svg}</div>`,
+          iconSize: [SIZE, SIZE],
+          iconAnchor: [SIZE / 2, tipPx],
+        });
+      }
+
+      function applyArrowState(state) {
+        if (state === "TRACKING") {
+          arrowLine.setStyle({ color: "red", weight: 3, opacity: 1, dashArray: null });
+          arrowHead.setOpacity(1);
+          arrowHead.setIcon(makeArrowIcon(lastBearingDeg, "red"));
+        } else if (state === "NO DETECTION") {
+          arrowLine.setStyle({ color: "#f9a825", weight: 5, opacity: 0.65, dashArray: "6 8" });
+          arrowHead.setOpacity(0.65);
+          arrowHead.setIcon(makeArrowIcon(lastBearingDeg, "#f9a825"));
+        } else if (state === "DISCONNECTED") {
+          arrowLine.setStyle({ color: "#c62828", weight: 4, opacity: 0.12, dashArray: "2 10" });
+          arrowHead.setOpacity(0.12);
+          arrowHead.setIcon(makeArrowIcon(lastBearingDeg, "#c62828"));
+        } else { 
+          arrowLine.setStyle({ color: "#607d8b", weight: 3, opacity: 0.18, dashArray: "2 10" });
+          arrowHead.setOpacity(0.18);
+          arrowHead.setIcon(makeArrowIcon(lastBearingDeg, "#607d8b"));
+        }
+      }
+
+      function destinationLatLng(latDeg, lonDeg, bearingDeg, distanceM) {
+        const R = 6371000;
+        const toRad = (d) => (d * Math.PI) / 180;
+        const toDeg = (r) => (r * 180) / Math.PI;
+
+        const lat1 = toRad(latDeg);
+        const lon1 = toRad(lonDeg);
+        const brng = toRad(bearingDeg);
+        const dr = distanceM / R;
+
+        const lat2 = Math.asin(
+          Math.sin(lat1) * Math.cos(dr) + Math.cos(lat1) * Math.sin(dr) * Math.cos(brng)
+        );
+
+        const lon2 =
+          lon1 +
+          Math.atan2(
+            Math.sin(brng) * Math.sin(dr) * Math.cos(lat1),
+            Math.cos(dr) - Math.sin(lat1) * Math.sin(lat2)
+          );
+
+        return [toDeg(lat2), toDeg(lon2)];
+      }
+
+      let arrowLine = L.polyline([sensor, sensor], { weight: 3, color: "red" }).addTo(map);
+      let arrowHead = L.marker(sensor, { icon: makeArrowIcon(0) }).addTo(map);
+
+      function setAzimuth(bearingDeg) {
+        const [lat0, lon0] = sensor;
+        const end = destinationLatLng(lat0, lon0, bearingDeg, arrowLengthM);
+
+        arrowLine.setLatLngs([sensor, end]);
+        arrowHead.setLatLng(end);
+      }
+
+      const TRAIL_MAX = 30;
+      let trailN = 7;
+      let trailSamples = [];
+
+      const trailLine = L.polyline([], {
+        color: "red",
+        weight: 3,
+        opacity: 0.35,
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(map);
+
+      function clearTrail() {
+        trailSamples = [];
+        renderTrail();
+      }
+
+      function renderTrail() {
+        if (trailN <= 0 || trailSamples.length < 2) {
+          trailLine.setLatLngs([]);
+          return;
+        }
+
+        const tips = [];
+        for (let i = 0; i < trailSamples.length; i++) {
+          const { bearingDeg: brng, lenM } = trailSamples[i];
+          const useLen = (lenM == null) ? arrowLengthM : lenM;
+          tips.push(destinationLatLng(sensor[0], sensor[1], brng, useLen));
+        }
+
+        const pts = tips.slice(0, Math.min(tips.length, trailN + 1)).reverse();
+        trailLine.setLatLngs(pts);
+      }
+
+      function pushTrail(bearingDeg, lenM = null) {
+        if (trailN <= 0) return;
+
+        trailSamples.unshift({ bearingDeg, lenM });
+
+        const maxKeep = (trailN <= 0) ? 0 : Math.min(TRAIL_MAX + 1, trailN + 1);
+        if (trailSamples.length > maxKeep) trailSamples.length = maxKeep;
+
+        renderTrail();
+      }
+
+      const latEl = document.getElementById("lat");
+      const lonEl = document.getElementById("lon");
+      const azEl  = document.getElementById("az");
+      const statusEl = document.getElementById("status");
+      const errEl = document.getElementById("err");
+      const btnEl = document.getElementById("update");
+      const gpsBtn = document.getElementById("useGps");
+      const gpsOnceBtn = document.getElementById("useGpsOnce");
+      const stopGpsBtn = document.getElementById("stopGps");
+
+      const freqEl = document.getElementById("freq");
+      const trailNEl = document.getElementById("trailN");
+      const lenEl = document.getElementById("len");
+      const autoLenEl = document.getElementById("autoLen");
+
+      let lastMsgMs = 0;
+
+      function setInputsFromSensor() {
+        latEl.value = sensor[0].toFixed(6);
+        lonEl.value = sensor[1].toFixed(6);
+      }
+
+      function updateSensorFromInputs() {
+        errEl.textContent = "";
+
+        const lat = Number.parseFloat(latEl.value);
+        const lon = Number.parseFloat(lonEl.value);
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          errEl.textContent = "Please enter valid numbers for lat/lon.";
+          return;
+        }
+        if (lat < -90 || lat > 90) {
+          errEl.textContent = "Latitude must be between -90 and 90.";
+          return;
+        }
+        if (lon < -180 || lon > 180) {
+          errEl.textContent = "Longitude must be between -180 and 180.";
+          return;
+        }
+
+        sensor = [lat, lon];
+        sensorMarker.setLatLng(sensor);
+        map.setView(sensor, map.getZoom(), { animate: true });
+
+        setAzimuth(lastBearingDeg);
+        renderArrow();
+        renderTrail();
+      }
+
+      function setSensorLatLon(lat, lon, pan = true) {
+        sensor = [lat, lon];
+        sensorMarker.setLatLng(sensor);
+        if (pan) map.setView(sensor, map.getZoom(), { animate: true });
+
+        setInputsFromSensor();
+        setAzimuth(lastBearingDeg);
+        renderArrow();
+        renderTrail();
+      }
+
+      async function postSensorLatLon(lat, lon) {
+        try {
+          await fetch("/sensor", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lat, lon, t: Date.now() })
+          });
+        } catch {}
+      }
+
+      let gpsWatchId = null;
+
+      gpsBtn.addEventListener("click", () => {
+        errEl.textContent = "";
+
+        if (gpsWatchId != null) navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+
+        const options = { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 };
+
+        gpsWatchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords;
+            setSensorLatLon(latitude, longitude, true);
+            postSensorLatLon(latitude, longitude);
+          },
+          () => {},
+          options
+        );
+      });
+
+      gpsOnceBtn.addEventListener("click", () => {
+        errEl.textContent = "";
+
+        if (gpsWatchId != null) navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+
+        const options = { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 };
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords;
+            setSensorLatLon(latitude, longitude, true);
+            postSensorLatLon(latitude, longitude);
+          },
+          () => {},
+          options
+        );
+      });
+
+      stopGpsBtn.addEventListener("click", () => {
+        if (gpsWatchId != null) navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+        errEl.textContent = "";
+      });
+
+      btnEl.addEventListener("click", updateSensorFromInputs);
+
+      trailNEl.value = String(trailN);
+
+      const updateTrailNFromInput = () => {
+        errEl.textContent = "";
+        const v = Number.parseInt(trailNEl.value, 10);
+
+        if (!Number.isFinite(v) || v < 0) {
+          errEl.textContent = "Previous tracks must be a whole number ≥ 0.";
+          trailNEl.value = String(trailN);
+          return;
+        }
+
+        trailN = clamp(v, 0, TRAIL_MAX);
+        trailNEl.value = String(trailN);
+
+        const maxKeep = (trailN <= 0) ? 0 : Math.min(TRAIL_MAX + 1, trailN + 1);
+        if (trailSamples.length > maxKeep) trailSamples.length = maxKeep;
+
+        renderTrail();
+      };
+
+      trailNEl.addEventListener("change", updateTrailNFromInput);
+      trailNEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") updateTrailNFromInput();
+      });
+
+      let autoLen = false;
+      let lastManualLenM = arrowLengthM;
+
+      lenEl.value = String(arrowLengthM);
+
+      function updateArrowLengthFromInput() {
+        if (autoLen) return;
+        errEl.textContent = "";
+        const v = Number.parseFloat(lenEl.value);
+
+        if (!Number.isFinite(v) || v <= 0) {
+          errEl.textContent = "Arrow length must be a positive number.";
+          return;
+        }
+
+        arrowLengthM = v;
+        setAzimuth(lastBearingDeg);
+        renderArrow();
+        renderTrail();
+      }
+
+      lenEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") updateArrowLengthFromInput();
+      });
+      lenEl.addEventListener("change", updateArrowLengthFromInput);
+
+      autoLenEl.addEventListener("change", () => {
+        const nextAutoLen = !!autoLenEl.checked;
+        if (nextAutoLen !== autoLen) clearTrail();
+        autoLen = nextAutoLen;
+
+        if (autoLen) {
+          const v = Number.parseFloat(lenEl.value);
+          if (Number.isFinite(v) && v > 0) lastManualLenM = v;
+          lenEl.disabled = true;
+
+          setAzimuth(lastBearingDeg);
+          renderArrow();
+          renderTrail();
+        } else {
+          lenEl.disabled = false;
+          arrowLengthM = lastManualLenM;
+          lenEl.value = String(Math.round(arrowLengthM));
+          setAzimuth(lastBearingDeg);
+          renderArrow();
+          renderTrail();
+        }
+      });
+
+      [latEl, lonEl].forEach(el => {
+        el.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") updateSensorFromInputs();
+        });
+      });
+
+      setInputsFromSensor();
+      setAzimuth(0);
+
+      const es = new EventSource("/events");
+      let lastValid = null;
+      const DISCONNECT_MS = 3500;
+      let curState = "WAITING";
+      let stateStartMs = 0;
+
+      function setStatus(state, ageMs = null) {
+        if (ageMs == null) {
+          statusEl.value = state;
+        } else {
+          statusEl.value = `${state} (${(ageMs / 1000).toFixed(1)}s)`;
+        }
+
+        statusEl.classList.remove("st-wait", "st-live", "st-nodet", "st-disc");
+        if (state === "WAITING") statusEl.classList.add("st-wait");
+        else if (state === "TRACKING") statusEl.classList.add("st-live");
+        else if (state === "NO DETECTION") statusEl.classList.add("st-nodet");
+        else if (state === "DISCONNECTED") statusEl.classList.add("st-disc");
+      }
+
+      function renderArrow() {
+        applyArrowState(curState);
+      }
+
+      setStatus("WAITING");
+      renderArrow();
+
+      es.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          // phone GPS sensor updates
+          if (msg.kind === "sensor" && typeof msg.lat === "number" && typeof msg.lon === "number") {
+            setSensorLatLon(msg.lat, msg.lon, true);
+            return;
+          }
+
+          lastMsgMs = Date.now();
+          lastValid = (msg.valid !== false);
+
+          if (typeof msg.az === "number") {
+            azEl.value = msg.az.toFixed(1);
+          }
+
+          if (lastValid && typeof msg.az === "number") {
+            lastBearingDeg = (360 - msg.az) % 360;
+
+            if (autoLen) {
+              if (typeof msg.range_m === "number" && Number.isFinite(msg.range_m)) {
+                arrowLengthM = clamp(msg.range_m, AUTO_LEN_MIN_M, AUTO_LEN_MAX_M);
+                lenEl.value = String(Math.round(arrowLengthM));
+              }
+            }
+
+            setAzimuth(lastBearingDeg);
+            renderArrow();
+            pushTrail(lastBearingDeg, autoLen ? arrowLengthM : null);
+          }
+
+          if (typeof msg.roi_f_lo_GHz === "number" && typeof msg.roi_f_hi_GHz === "number") {
+            freqEl.value = `${msg.roi_f_lo_GHz.toFixed(4)} - ${msg.roi_f_hi_GHz.toFixed(4)}`;
+          }
+        } catch {}
+      };
+
+      setInterval(() => {
+        const now = Date.now();
+
+        let nextState = "WAITING";
+
+        if (!lastMsgMs) {
+          nextState = "WAITING";
+        } else {
+          const packetAge = now - lastMsgMs;
+
+          if (packetAge > DISCONNECT_MS) nextState = "DISCONNECTED";
+          else if (lastValid === false)  nextState = "NO DETECTION";
+          else                           nextState = "TRACKING";
+        }
+
+        if (nextState !== curState) {
+          curState = nextState;
+          stateStartMs = now;
+        }
+
+        const age = stateStartMs ? (now - stateStartMs) : null;
+        setStatus(curState, age);
+        renderArrow();
+      }, 250);
+    </script>
+</body>
+</html>
