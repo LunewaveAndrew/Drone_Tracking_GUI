@@ -17,11 +17,9 @@ ngrok setup (one-time):
 
 To use:
 1. Follow steps 1-4 of how to run with recorded data
-2. Open ngrok and run ngrok http 8000. Look for a line that look like this: Forwarding                    https://adan-acorned-undetrimentally.ngrok-free.dev -> http://localhost:8000.
+2. Open ngrok and run ngrok http 8000. Look for a line that looks like this: Forwarding                    https://adan-acorned-undetrimentally.ngrok-free.dev -> http://localhost:8000.
    Open the https url given on your phone. It should give you the same view as your laptop.
-3. Make sure your phone's location services are enabled in settings and you should now be able use your phones GPS to set the sensor location
-   a) GPS (set once) will set the sensor location to your phones current GPS location
-   b) GPS (continous) will make the sensor location follow your phones location. Stop GPS ends this 
+3. Make sure your phone's location services are enabled in settings and you should now be able use your phones GPS to set the sensor location. GPS (set once) will set the sensor location to your phones current GPS location. GPS (continous) will make the sensor location follow your phones location. Stop GPS ends this 
 
 To run with live data the process is the exact same, just run GUI_withPython_withTCP_frame_number_Linux.m instead of GUI_test_load_data.m
 
