@@ -28,3 +28,10 @@ Notes:
 - Tracking status is when we are continuously receiving valid packets from matlab (e.g. we are tracking the drone)
 - No detection status occurs when we receive an invalid signal from matlab
 - Disconnected status occurs when we stop receiving packets for 3.5 seconds
+
+Next steps/known problems:
+- Add the capability to track multiple items
+- Switch to google maps satellite for (maybe) more accurate looking GPS
+- Improve UI
+- Refreshing the page after setting GPS goes to the last set GPS location instead of reverting to the default sensor location
+
