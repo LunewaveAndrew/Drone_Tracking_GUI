@@ -1,11 +1,10 @@
 close all; clear all; clc;
 % Open terminal and run python script
 
-
 % if python error run this in terminal: pkill -f DataSave2_512.py
 
 % wdir = pwd;
-% pythonScript = fullfile(wdir, 'DataSave2_512.py'); %NAME OF FILE TO RUN 
+% pythonScript = fullfile(wdir, 'DataSave2_512.py'); %NAME OF FILE TO RUN
 % pythonCmd = sprintf('gnome-terminal -- bash -c "python3 ''%s''; exec bash" &', pythonScript); %WHICH LANGUAGE
 % system(pythonCmd);
 % disp('Python UDP listener started in background.');
@@ -47,7 +46,6 @@ RGB = [C_norm, zeros(length(C_norm),1), zeros(length(C_norm),1)];
 disp('here')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
 frequency_lib = 2456; %MHz (use 2456 MHz or 2360 MHz calibration library)
 if(frequency_lib==2456)
     libpath = './Calibration_Library_2p45GHz';
@@ -61,6 +59,9 @@ if isfile(lib_cache)
     load(lib_cache, 'Lib_Mag', 'Lib_Phase', 'Lib_Complex');
 end
 
+% ================= LOAD RANGE LIBRARY (AMP -> RANGE) =================
+load('my_library_data.mat','amp_library','range_DF');
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 algorithm_select='CAPON';
 
@@ -72,6 +73,13 @@ save_flag=0;      % Save results
 num_frame = 512;
 N_frame=num_frame;     % Number of frames
 center_fre = str2num(c_fre.String);
+
+% ===== GUI bridge (MATLAB -> Python server -> Browser) =====
+u = udpport("datagram","IPV4");
+udp_ip = "127.0.0.1";
+udp_port = 9999;
+
+range_estimate_based_amp = NaN(10000,1);
 
 serverIP = '192.168.56.10';
 serverPort = 9000;
@@ -90,7 +98,7 @@ end
 
 % ================= MAIN LOOP =================
 for ang_ind=1:10000   % Placeholder loop (expandable if scanning angles)
-tic   
+tic
 
     fprintf('--- Receiving frame #%d ---\n', ang_ind);
 
@@ -145,7 +153,7 @@ C4= C0 (L_C0/4+2:2:L_C0/4*2,:).'; C_all(:,4)=C4(:);
 C5= C0 (L_C0/2+1:2:L_C0/4*3,:).'; C_all(:,5)=C5(:);
 C6= C0 (L_C0/2+2:2:L_C0/4*3,:).'; C_all(:,6)=C6(:);
 C7= C0 (L_C0/4*3+1:2:L_C0,:).'; C_all(:,7)=C7(:);
-C8= C0 (L_C0/4*3+2:2:L_C0,:).'; C_all(:,8)=C8(:); 
+C8= C0 (L_C0/4*3+2:2:L_C0,:).'; C_all(:,8)=C8(:);
 
 C1_cmplex=C_all(1:2:end,:)+1i*C_all(2:2:end,:);
 
@@ -153,7 +161,7 @@ C1_cmplex_ooo=C1_cmplex;
 
 C1_cmplex=C1_cmplex(length(C1_cmplex)-num_frame*1024+1:length(C1_cmplex),:);
 
-  
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -179,7 +187,7 @@ end
     % ================= FFT PROCESSING =================
     FFT_full=zeros(N_frame,1024,6);      % FFT results [frame, freq, RX]
     threshold_FFT=zeros(N_frame,1024,6); % Thresholding results
-   
+
 window_hann=hann(1024);
 
 
@@ -194,29 +202,29 @@ window_hann=hann(1024);
         freF=fft(window_hann.*C1_cmplex([1:1024]+1024*(frame_ind-1),6)); % channel 2
         freG=fft(window_hann.*C1_cmplex([1:1024]+1024*(frame_ind-1),7)); % channel 3
         % freH=fft(C1_cmplex([1:1024]+1024*(frame_ind-1),8));
-        
+
         % Reorder into 6 RX channels
         FFT_full(frame_ind,:,1)=fftshift(freE);
         FFT_full(frame_ind,:,2)=fftshift(freF);
         FFT_full(frame_ind,:,3)=fftshift(freG);
         FFT_full(frame_ind,:,4)=fftshift(freC);
         FFT_full(frame_ind,:,5)=fftshift(freB);
-        FFT_full(frame_ind,:,6)=fftshift(freD);      
+        FFT_full(frame_ind,:,6)=fftshift(freD);
     end
 
 
     % ================= PLOT SPECTROGRAM =================
-    
-    
+
+
     Nrx=6;   % Number of RX channels used
     time_axis=[0:1023]*1/fre_sample*1e6;  % Time axis (us)
     % fre_axis=fre/1e9+2.277;               % Frequency axis (GHz), with LO offset
     fre_axis=fre/1e9-fre_sample/1e9/2;               % Frequency axis (GHz), with LO offset
-if(1)    
+if(1)
     for rx=3:3
         test_STFT=abs(FFT_full(:,:,rx));  % Magnitude spectrogram for RX
-        
-        
+
+
             figure(1);
             % subplot(2, 3, rx);
             subplot('Position',[0.68 0.2 0.3 0.5]);
@@ -229,17 +237,17 @@ if(1)
             hold off;
 
             grid on;
-            
+
             xlabel('Time (us)');
             ylabel('Frequency (GHz)');
-            cb = colorbar;               
-            ylabel(cb, 'Magnitude (dB)');    
+            cb = colorbar;
+            ylabel(cb, 'Magnitude (dB)');
             caxis([20 90]);              % Dynamic range for plotting
             title(sprintf('Spectrogram of RX %d', rx));
     end
 end
-     
- 
+
+
     offset=1.25;
 
     mag=abs(FFT_full);
@@ -254,7 +262,7 @@ end
     final_threshold=ones(N_frame,1024);
     for rx=1:Nrx
         test_threshold=threshold_FFT(:,:,rx);
-        
+
         if(plot_flag)
             figure(97);
             subplot(2, 3, rx);
@@ -264,13 +272,13 @@ end
             xlabel('Time (us)');
             ylabel('Frequency (GHz)');
             colormap(flipud(gray))
-            cb = colorbar;              
+            cb = colorbar;
             title(sprintf('Binary threshold of RX %d', rx));
         end
-        
+
         final_threshold=final_threshold.*test_threshold; % Common detections
     end
-    
+
     % Final binary threshold (intersection across RXs)
     if(plot_flag)
         figure(200)
@@ -280,7 +288,7 @@ end
         xlabel('Time (us)');
         ylabel('Frequency (GHz)');
         colormap(flipud(gray))
-        cb = colorbar;              
+        cb = colorbar;
         title(sprintf('Final threshold'));
     end
 
@@ -299,15 +307,15 @@ end
     AZ_steps = length(AZ_data);
     EL_data = EL_start:EL_step:EL_end;
     EL_steps = length(EL_data);
-    
+
     AZ_table=AZ_data;
     EL_table=EL_data;
     length_el=length(EL_table);
     length_az=length(AZ_table);
-    
-    
 
-    
+
+
+
     % ================= INITIALIZE RESULT ARRAYS =================
     AZ_result=[];
     AZ_result_itp=[];
@@ -322,17 +330,17 @@ end
 
         % Find frames where CFAR detected the peak
         frames = find(final_threshold(:,peak) ==1);
-        
+
         if(print_detail)
             fprintf('Peak %d is found in frame(s): %s\n', peak, mat2str(frames'));
         end
-        
+
         if (length(frames)>10)
             % Extract complex FFT data for selected frames
             test_data=squeeze(FFT_full(frames,peak,:));
-            X=test_data.'; 
+            X=test_data.';
             R = (X * X') / length(frames); % Covariance matrix
-            
+
             % ================= DOA ALGORITHM =================
             if strcmp(algorithm_select,'MUSIC')
                 % --------- MUSIC Algorithm ---------
@@ -341,19 +349,19 @@ end
                 Evecs_sorted = Evecs(:, idx);
                 d=2; % number of signals assumed
                 En = Evecs_sorted(:, d+1:end); % Noise subspace
-                
+
                 % MUSIC spectrum evaluation
                 Pmusic = zeros(length_el, length_az);
                 for el_idx = 1:length_el
                     for az_idx = 1:length_az
-                        steering = Lib_Complex(:, az_idx, el_idx);  
+                        steering = Lib_Complex(:, az_idx, el_idx);
                         Pmusic(el_idx, az_idx) = 1 / abs(steering' * (En * En') * steering);
                     end
                 end
-                
+
                 Pmusic_dB = mag2db(abs(Pmusic));
                 abs_spectrum=abs(Pmusic);
-    
+
                 % Plot MUSIC spectrum if only 1 ROI frequency
                 if(length(roi_freq)==1)
                     figure;
@@ -362,7 +370,7 @@ end
                     xlabel('Azimuth (°)'); ylabel('Elevation (°)');
                     cb = colorbar; ylabel(cb, 'Spatial Spectrum (dB)');
                     grid on; title('2D MUSIC Spectrum');
-                    
+
                     [AZ_grid, EL_grid] = meshgrid(AZ_table, EL_table);
                     figure; surf(AZ_grid, EL_grid, Pmusic_dB, 'EdgeColor', 'none');
                     xlabel('Azimuth (°)'); ylabel('Elevation (°)'); zlabel('Spatial Spectrum (dB)');
@@ -370,29 +378,29 @@ end
                     cb = colorbar; ylabel(cb, 'Spatial Spectrum (dB)');
                     view(45, 45); shading interp;
                 end
-                
+
             elseif strcmp(algorithm_select,'CAPON')
                 % --------- CAPON Algorithm ---------
                 try
                     R_inv = pinv(R);  % Pseudo-inverse covariance matrix
                 catch
                     fprintf('ERROR: Singular matrix\n');
-                    ADSINR = -3;  
+                    ADSINR = -3;
                     return;
                 end
-               
+
                 PAD = zeros(length_el, length_az);
                 for el_idx = 1:length_el
                     for az_idx = 1:length_az
                         steering = Lib_Complex(:, az_idx, el_idx);
-                        PAD(el_idx, az_idx) = (steering' * R_inv) * steering; 
+                        PAD(el_idx, az_idx) = (steering' * R_inv) * steering;
                     end
                 end
                 PCapon=1./PAD;
-                
+
                 abs_spectrum=abs(PCapon);
                 PCapon_dB = mag2db(abs(PCapon));
-                
+
                 if(length(roi_freq)==1)
                     figure;
                     imagesc(AZ_table, EL_table, PCapon_dB);
@@ -400,7 +408,7 @@ end
                     xlabel('Azimuth (°)'); ylabel('Elevation (°)');
                     cb = colorbar; ylabel(cb, 'Spatial Spectrum (dB)');
                     grid on; title('2D CAPON Spectrum');
-                    
+
                     [AZ_grid, EL_grid] = meshgrid(AZ_table, EL_table);
                     figure; surf(AZ_grid, EL_grid, PCapon_dB, 'EdgeColor', 'none');
                     xlabel('Azimuth (°)'); ylabel('Elevation (°)'); zlabel('Spatial Spectrum (dB)');
@@ -408,14 +416,14 @@ end
                     cb = colorbar; ylabel(cb, 'Spatial Spectrum (dB)');
                     view(45, 45); shading interp;
                 end
-                
+
             elseif strcmp(algorithm_select,'Correlation')
                 % --------- Correlation-based DOA ---------
                 rxSignal2D_FFT_rx1=test_data(:,1);
                 rxSignal2D_FFT_test=test_data./rxSignal2D_FFT_rx1;
                 rxSignal2D_FFT_test_mean=mean(rxSignal2D_FFT_test,1).';
                 weighting=[1 1 1 1 1 1]';
-                
+
                 for az=1:AZ_steps
                     for el=1:EL_steps
                         r=corrcoef(rxSignal2D_FFT_test_mean.*weighting, ...
@@ -423,9 +431,9 @@ end
                         coe(az,el)=r(1,2);
                     end
                 end
-                
+
                 abs_spectrum=reshape(abs(coe),[length_az length_el]);
-                
+
                 if(length(roi_freq)==1)
                     figure();
                     imagesc(EL_table, AZ_table, mag2db(abs_spectrum));
@@ -437,18 +445,18 @@ end
                 end
                 abs_spectrum=abs_spectrum.';
             end
-           
+
             % ================= PEAK SEARCH & INTERPOLATION =================
             [max_val, max_idx] = max(abs_spectrum(:));
             [peak_el, peak_az] = ind2sub(size(abs_spectrum), max_idx);
-            
+
             AZ_peak = AZ_table(peak_az);
             EL_peak = EL_table(peak_el);
-            
-            cf_reshape = abs_spectrum;       
+
+            cf_reshape = abs_spectrum;
             AZ_step = AZ_table(2) - AZ_table(1);
             EL_step = EL_table(2) - EL_table(1);
-            
+
             % Interpolation in Azimuth
             delta_az = 0;
             if peak_az > 1 && peak_az < length_az
@@ -459,7 +467,7 @@ end
                     delta_az = 0.5 * (a - c) / (a - 2*b + c);
                 end
             end
-            
+
             % Interpolation in Elevation
             delta_el = 0;
             if peak_el > 1 && peak_el < length_el
@@ -470,27 +478,76 @@ end
                     delta_el = 0.5 * (a1 - c1) / (a1 - 2*b1 + c1);
                 end
             end
-            
+
             % Final interpolated peaks
             AZ_peak_itp = AZ_table(peak_az) + delta_az * AZ_step;
             EL_peak_itp = EL_table(peak_el) + delta_el * EL_step;
-                        
+
             % Store results
             AZ_result=[AZ_result;AZ_peak];
             AZ_result_itp=[AZ_result_itp;AZ_peak_itp];
             EL_result=[EL_result;EL_peak];
             EL_result_itp=[EL_result_itp;EL_peak_itp];
-        
+
             summary_result=[summary_result;peak fre_peak length(frames) AZ_peak EL_peak AZ_peak_itp EL_peak_itp];
 
         end
     end
 
+    %%%%%%%%%%%%%%%%%%range base amplitude estimation%%%%%%%%%%%%%%%%%%%%%
+    if ~isempty(AZ_result)
+        if(length(summary_result(:,3))>str2num(CFAR_number.String))
+            drone_threshold=zeros(size(final_threshold));
+            drone_threshold(:,roi_freq)=1;
+            drone_threshold=drone_threshold.*final_threshold;
+
+            amp_rx_hist=zeros(1,6);
+            for rx=1:6
+                amp_rx_complex=FFT_full(:,:,rx).*drone_threshold;
+                amp_rx_list = amp_rx_complex(amp_rx_complex ~= 0);
+                abs_amp_rx_list = abs(amp_rx_list);
+                abs_amp_rx_list_db=mag2db(abs_amp_rx_list);
+
+                [counts, edges] = histcounts(abs_amp_rx_list_db, 25);
+
+                % Bin centers
+                binCenters = (edges(1:end-1) + edges(2:end)) / 2;
+
+                % Find peak bin
+                [~, idx] = max(counts);
+                peakLoc = binCenters(idx);
+                amp_rx_hist(rx)=peakLoc;
+            end
+
+            scores_std_test = zeros(size(amp_library,1),1);
+            scores_std_lib  = zeros(size(amp_library,1),1);
+
+            for i = 1:size(amp_library,1)
+                r = corrcoef(amp_rx_hist, amp_library(i,:));
+                rho = r(1,2);                       % correlation coefficient
+                cov_from_corr_1 = rho * std(amp_rx_hist);% * std(amp_library(i,:));
+                cov_from_corr_2 = rho * std(amp_library(i,:));
+                scores_std_test(i) = cov_from_corr_1;
+                scores_std_lib(i) = cov_from_corr_2;
+            end
+            max_scores_std_test=max(scores_std_test);
+            [~, bestIndex] = min(abs(max_scores_std_test-scores_std_lib));
+            range_estimate = range_DF(bestIndex);
+
+        else
+            range_estimate=NaN;
+        end
+    else
+            range_estimate=NaN;
+    end
+
+    range_estimate_based_amp(ang_ind)=range_estimate;
+    %%%%%%%%%%%%%%%%%%range base amplitude estimation%%%%%%%%%%%%%%%%%%%%%
 
     if ~isempty(AZ_result)
         final_AZ=median(AZ_result);
         final_AZ_ITP=median(AZ_result_itp);
-    
+
         final_EL=median(EL_result);
         final_EL_ITP=median(EL_result_itp);
         if(print_detail)
@@ -498,7 +555,7 @@ end
             fprintf('  AZ      = %.3f\n', final_AZ);
             fprintf('  AZ ITP  = %.3f\n', final_AZ_ITP);
             fprintf('  EL      = %.3f\n', final_EL);
-            fprintf('  EL ITP  = %.3f\n', final_EL_ITP); 
+            fprintf('  EL ITP  = %.3f\n', final_EL_ITP);
         end
         if(save_flag==1)
             if(frequency_lib==2456)
@@ -526,16 +583,24 @@ end
     X_plot=distance*cosd(final_AZ_ITP+90);Y_plot=distance*sind(final_AZ_ITP+90);
     X_plot2=distance*cosd(final_EL_ITP);Y_plot2=distance*sind(final_EL_ITP);
 
-        
-        if(length(summary_result(:,3))>str2num(CFAR_number.String))    
-            
+        % For GUI frequency range display (label says MHz)
+        roi_f_lo_GHz = center_fre + fre_axis(roi_1)*1000;
+        roi_f_hi_GHz = center_fre + fre_axis(roi_2)*1000;
+
+        % Timestamp in ms (do NOT use variable name "t" because it is your tcpclient)
+        t_ms = posixtime(datetime("now")) * 1000;
+
+        median_CFAR_number = median(summary_result(:,3));
+
+        if(length(summary_result(:,3))>str2num(CFAR_number.String))
+
             for i = trail_length:-1:2
                 trail(i, :, 1) = trail(i-1, :, 1);
                 trail(i, :, 2) = trail(i-1, :, 2);
             end
             trail(1, :, 1) = [X_plot, Y_plot];
             trail(1, :, 2) = [X_plot2, Y_plot2];
-            
+
             figure(1)
             subplot('Position',[0.05 0.2 0.25 0.63]);
 
@@ -555,7 +620,7 @@ end
             xlabel('X');ylabel('Y');
             text(-0.5, 1.35, ['Azimuth Angle = ' num2str(-round(90 - (final_AZ_ITP + 90), 2))], 'FontSize', 15, 'Color', 'r')
 
-            
+
             subplot('Position',[0.35 0.2 0.25 0.63]);
 
             % hold on;
@@ -566,31 +631,80 @@ end
                 if ~(isnan(trail(i:i+1, :, 2)))
                     plot([trail(i, 1, 2) trail(i+1, 1, 2)],[trail(i, 2, 2) trail(i+1, 2, 2)],'Color',[1 0 0 C_norm(i)],'LineWidth',2);
                 end
-            end            
+            end
             hold off
             grid on;
             xlim([-0.5 1.5]);
-            ylim([-0.5 1.5]);
+            ylim([-1.5 1.5]);
             xlabel('X');ylabel('Z');
             text(0.3, 1.4, ['Elevation Angle = ' num2str(round(final_EL_ITP, 2))], 'FontSize', 15, 'Color', 'r')
 
-            % fontsize(12, "points");
+            % ===== Send live update to GUI via UDP JSON =====
+            msgStruct = struct( ...
+              'az', final_AZ_ITP, ...
+              'el', final_EL_ITP, ...
+              'frame', ang_ind, ...
+              't', t_ms, ...
+              'cfar_med', median_CFAR_number, ...
+              'valid', true, ...
+              'roi_f_lo_GHz', roi_f_lo_GHz, ...
+              'roi_f_hi_GHz', roi_f_hi_GHz ...
+            );
+
+            if isfinite(range_estimate)
+                msgStruct.range_m = range_estimate;
+            end
+
+            msg = jsonencode(msgStruct);
+            write(u, uint8(msg), udp_ip, udp_port);
+
         else
             fprintf('No drone signal \n');
-         end    
+
+            % ===== Send NO DETECTION update to GUI =====
+            msgStruct = struct( ...
+              'frame', ang_ind, ...
+              't', t_ms, ...
+              'valid', false, ...
+              'reason', 'low_cfar', ...
+              'cfar_med', median_CFAR_number, ...
+              'roi_f_lo_GHz', roi_f_lo_GHz, ...
+              'roi_f_hi_GHz', roi_f_hi_GHz ...
+            );
+            msg = jsonencode(msgStruct);
+            write(u, uint8(msg), udp_ip, udp_port);
+         end
     else
-    
+
         fprintf('No detection:\n');
+
+        % For GUI frequency range display (label says MHz)
+        roi_f_lo_GHz = center_fre + fre_axis(roi_1)*1000;
+        roi_f_hi_GHz = center_fre + fre_axis(roi_2)*1000;
+
+        t_ms = posixtime(datetime("now")) * 1000;
+
+        % ===== Send NO DETECTION update to GUI =====
+        msgStruct = struct( ...
+          'frame', ang_ind, ...
+          't', t_ms, ...
+          'valid', false, ...
+          'reason', 'no_detection', ...
+          'roi_f_lo_GHz', roi_f_lo_GHz, ...
+          'roi_f_hi_GHz', roi_f_hi_GHz ...
+        );
+        msg = jsonencode(msgStruct);
+        write(u, uint8(msg), udp_ip, udp_port);
     end
 
 
-% 
-% 
-% 
-% 
-% %%%%%%%%%%%%%%%%   add python capture next file  %%%%%%%%%%%%%%%%
+%
+%
+%
+%
+%%%%%%%%%%%%%%%%   add python capture next file  %%%%%%%%%%%%%%%%
 % Freq = [2400 2200 2000 1800 1600 1300 900];
-% 
+%
 if center_fre ~= str2num(c_fre.String)
 
  cmd = sprintf('SetSingleFrequency %d\n', str2num(c_fre.String));
@@ -599,15 +713,15 @@ if center_fre ~= str2num(c_fre.String)
     fprintf('NCO updated \n');
 end
  %pause(0.03);
-% 
+%
 % %cmd = sprintf('SetRangeFrequency %d %d\n',1,4);
 % %write(t, uint8(cmd), "uint8");  % Send as raw bytes
-% 
-% 
+%
+%
 
 read_frame_number = str2num(f_number.String);
  if  num_frame ~= read_frame_number
-    if ismember(read_frame_number, [128 256 512 1024])  
+    if ismember(read_frame_number, [128 256 512 1024])
          cmd = sprintf('SetDwellSize %d\n', read_frame_number);
          write(t, uint8(cmd), "uint8");  % Send as raw bytes
          num_frame = read_frame_number;
@@ -615,21 +729,22 @@ read_frame_number = str2num(f_number.String);
     end
 
  end
- % 
+ %
  %  if  ang_ind == 100
  % cmd = sprintf('SetDwellSize %d\n',512);
  % write(t, uint8(cmd), "uint8");  % Send as raw bytes
  % num_frame = 512;
  % end
- 
+ %
+
 
 
  cmd = sprintf('NextFrame\n');
  write(t, uint8(cmd), "uint8");  % Send as raw bytes
-% 
+%
 % %write(t, uint8('NextFrame\n'), "uint8");  % Send as raw bytes
-% 
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 toc
