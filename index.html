@@ -416,7 +416,7 @@
       const rfEndEl = document.getElementById("rfEnd");
       const cmdStatusEl = document.getElementById("cmdStatus");
 
-      // Defaults (match current MATLAB GUI defaults)
+      // Defaults
       if (dwellEl && !dwellEl.value) dwellEl.value = "512";
       if (sfreqEl && !sfreqEl.value) sfreqEl.value = "2400";
       if (rfStartEl && !rfStartEl.value) rfStartEl.value = "680";
@@ -497,7 +497,6 @@
             cmdStatusEl.textContent = `Sent: ${pretty}`;
           }
         } catch (e) {
-          // Reuse the existing error area
           if (errEl) errEl.textContent = `EVB command failed: ${e?.message || e}`;
         }
       }
@@ -511,7 +510,6 @@
         const n = parseIntSafe(dwellEl?.value);
         if (n == null) return;
 
-        // Mirror the common firmware/GUI constraint you already use in MATLAB
         const allowed = new Set([128, 256, 512, 1024]);
         if (!allowed.has(n)) {
           if (errEl) errEl.textContent = "Dwell size must be one of: 128, 256, 512, 1024";
