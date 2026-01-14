@@ -83,6 +83,12 @@ range_estimate_based_amp = NaN(10000,1);
 
 serverIP = '192.168.56.10';
 serverPort = 9000;
+
+% ===== EVB command bridge (Python server -> MATLAB) =====
+cmd_udp_port = 9998;  % MUST match server.py forwarding port
+u_cmd = udpport("datagram","IPV4","LocalPort",cmd_udp_port);
+disp(['Listening for EVB commands on UDP port ' num2str(cmd_udp_port)]);
+
 % Try to establish a single persistent TCP connection
 while true
     try
@@ -697,6 +703,57 @@ end
         write(u, uint8(msg), udp_ip, udp_port);
     end
 
+% ===== Receive EVB commands from browser UI (via server.py) =====
+while u_cmd.NumDatagramsAvailable > 0
+    cmd_json = read(u_cmd, 1, "string");
+    try
+        cmd_msg = jsondecode(cmd_json);
+
+        cmd_name = string(cmd_msg.cmd);
+        args = double(cmd_msg.args);
+
+        if cmd_name == "SetDwellSize"
+            if numel(args) >= 1
+                cmd = sprintf('SetDwellSize %d\n', args(1));
+                write(t, uint8(cmd), "uint8");
+
+                % Update local state so next loop matches EVB
+                num_frame = args(1);
+                N_frame = num_frame;
+                f_number.String = num2str(num_frame);
+
+                fprintf('[EVB] %s', cmd);
+            end
+
+        elseif cmd_name == "SetSingleFrequency"
+            if numel(args) >= 1
+                cmd = sprintf('SetSingleFrequency %d\n', args(1));
+                write(t, uint8(cmd), "uint8");
+
+                % Update local state so next loop matches EVB
+                center_fre = args(1);
+                c_fre.String = num2str(center_fre);
+
+                fprintf('[EVB] %s', cmd);
+            end
+
+        elseif cmd_name == "SetRangeFrequency"
+            if numel(args) >= 2
+                cmd = sprintf('SetRangeFrequency %d %d\n', args(1), args(2));
+                write(t, uint8(cmd), "uint8");
+
+                % Treat these as ROI1/ROI2 inputs (2 ints)
+                ROI1.String = num2str(args(1));
+                ROI2.String = num2str(args(2));
+
+                fprintf('[EVB] %s', cmd);
+            end
+        end
+
+    catch ME
+        fprintf('[EVB] Ignored bad command packet: %s\n', ME.message);
+    end
+end
 
 %
 %
