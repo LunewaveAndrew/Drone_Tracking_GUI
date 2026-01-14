@@ -645,7 +645,7 @@ end
             xlabel('X');ylabel('Z');
             text(0.3, 1.4, ['Elevation Angle = ' num2str(round(final_EL_ITP, 2))], 'FontSize', 15, 'Color', 'r')
 
-            % ===== Send live update to GUI via UDP JSON =====
+            % Send live update to GUI via UDP JSON
             msgStruct = struct( ...
               'az', final_AZ_ITP, ...
               'el', final_EL_ITP, ...
@@ -703,7 +703,7 @@ end
         write(u, uint8(msg), udp_ip, udp_port);
     end
 
-% ===== Receive EVB commands from browser UI (via server.py) =====
+% Receive EVB commands from browser UI
 while u_cmd.NumDatagramsAvailable > 0
     cmd_json = read(u_cmd, 1, "string");
     try
@@ -742,7 +742,6 @@ while u_cmd.NumDatagramsAvailable > 0
                 cmd = sprintf('SetRangeFrequency %d %d\n', args(1), args(2));
                 write(t, uint8(cmd), "uint8");
 
-                % Treat these as ROI1/ROI2 inputs (2 ints)
                 ROI1.String = num2str(args(1));
                 ROI2.String = num2str(args(2));
 
