@@ -10,11 +10,10 @@ HTTP_PORT = 8000
 UDP_HOST = "127.0.0.1"
 UDP_PORT = 9999
 
-# UDP port where MATLAB listens for EVB command messages (Option A bridge)
+# UDP port where MATLAB listens for EVB command messages 
 MATLAB_CMD_UDP_HOST = "127.0.0.1"
 MATLAB_CMD_UDP_PORT = 9998
 
-# Reusable UDP socket for sending commands to MATLAB
 evb_cmd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 clients_lock = threading.Lock()
@@ -106,9 +105,6 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
-        # Routes:
-        #   POST /sensor   -> update sensor (phone GPS)
-        #   POST /evb_cmd  -> forward EVB command to MATLAB (Option A)
         try:
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length) if length > 0 else b"{}"
@@ -145,9 +141,6 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if self.path == "/evb_cmd":
-            # Minimal validation:
-            #   - SetDwellSize must be one of 128/256/512/1024
-            #   - SetRangeFrequency must be two ints and start <= end
             try:
                 cmd = str(data.get("cmd", "")).strip()
                 args = data.get("args", [])
@@ -161,13 +154,10 @@ class Handler(SimpleHTTPRequestHandler):
                     self.send_error(400, "args must be a list")
                     return
 
-                # Convert args to ints when possible (EVB commands are ASCII + ints)
                 int_args = []
                 for a in args:
-                    # Accept numeric strings or numbers
                     int_args.append(int(a))
 
-                # Keep only the two requested constraints
                 if cmd == "SetDwellSize":
                     if len(int_args) != 1 or int_args[0] not in (128, 256, 512, 1024):
                         self.send_error(400, "Dwell size must be one of: 128, 256, 512, 1024")
@@ -183,7 +173,6 @@ class Handler(SimpleHTTPRequestHandler):
 
                 forward_evb_cmd_to_matlab(cmd, int_args, t)
 
-                # Simple ack (frontend only checks resp.ok)
                 payload = b"OK"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain")
