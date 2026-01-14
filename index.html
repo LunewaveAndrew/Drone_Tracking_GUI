@@ -124,6 +124,23 @@
         border-color: #c62828;
         color: #b71c1c;
       }
+      .evbgrid{
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 2px;
+        margin-top: 2px;
+      }
+      .evbgrid label{ margin: 0; }
+      #dwell  { width: 110px; }
+      #sfreq  { width: 110px; }
+      #rfStart, #rfEnd { width: 110px; }
+      .evbmeta{
+        margin-top: 2px;
+        font-size: 11px;
+        opacity: 0.85;
+        min-height: 14px;
+      }
+      #cmdStatus{ display: inline-block; }
 
       .lenmode{
         margin-top: 2px;
@@ -172,6 +189,32 @@
           Frequency range (MHz)
             <input id="freq" type="text" readonly />
         </label>
+      </div>
+
+      <div class="evbgrid">
+        <label>
+          Dwell size
+          <input id="dwell" type="number" step="1" min="1" placeholder="e.g. 512" />
+        </label>
+
+        <label>
+          Single freq (MHz)
+          <input id="sfreq" type="number" step="1" min="0" placeholder="e.g. 2400" />
+        </label>
+
+        <label>
+          Range freq start
+          <input id="rfStart" type="number" step="1" placeholder="e.g. 680" />
+        </label>
+
+        <label>
+          Range freq end
+          <input id="rfEnd" type="number" step="1" placeholder="e.g. 730" />
+        </label>
+      </div>
+
+      <div class="evbmeta">
+        <span id="cmdStatus"></span>
       </div>
 
       <div class="lenmode">
@@ -366,6 +409,19 @@
       const lenEl = document.getElementById("len");
       const autoLenEl = document.getElementById("autoLen");
 
+      // EVB control widgets (browser -> server.py -> MATLAB -> EVB)
+      const dwellEl = document.getElementById("dwell");
+      const sfreqEl = document.getElementById("sfreq");
+      const rfStartEl = document.getElementById("rfStart");
+      const rfEndEl = document.getElementById("rfEnd");
+      const cmdStatusEl = document.getElementById("cmdStatus");
+
+      // Defaults (match current MATLAB GUI defaults)
+      if (dwellEl && !dwellEl.value) dwellEl.value = "512";
+      if (sfreqEl && !sfreqEl.value) sfreqEl.value = "2400";
+      if (rfStartEl && !rfStartEl.value) rfStartEl.value = "680";
+      if (rfEndEl && !rfEndEl.value) rfEndEl.value = "730";
+
       let lastMsgMs = 0;
 
       function setInputsFromSensor() {
@@ -421,6 +477,87 @@
           });
         } catch {}
       }
+
+
+      async function postEvbCmd(cmd, args) {
+        try {
+          const resp = await fetch("/evb_cmd", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cmd, args, t: Date.now() })
+          });
+
+          if (!resp.ok) {
+            const txt = await resp.text().catch(() => "");
+            throw new Error(`HTTP ${resp.status}${txt ? (": " + txt) : ""}`);
+          }
+
+          if (cmdStatusEl) {
+            const pretty = `${cmd} ${Array.isArray(args) ? args.join(" ") : ""}`.trim();
+            cmdStatusEl.textContent = `Sent: ${pretty}`;
+          }
+        } catch (e) {
+          // Reuse the existing error area
+          if (errEl) errEl.textContent = `EVB command failed: ${e?.message || e}`;
+        }
+      }
+
+      function parseIntSafe(v) {
+        const n = Number.parseInt(String(v), 10);
+        return Number.isFinite(n) ? n : null;
+      }
+
+      function sendDwellIfValid() {
+        const n = parseIntSafe(dwellEl?.value);
+        if (n == null) return;
+
+        // Mirror the common firmware/GUI constraint you already use in MATLAB
+        const allowed = new Set([128, 256, 512, 1024]);
+        if (!allowed.has(n)) {
+          if (errEl) errEl.textContent = "Dwell size must be one of: 128, 256, 512, 1024";
+          return;
+        }
+        errEl.textContent = "";
+        postEvbCmd("SetDwellSize", [n]);
+      }
+
+      function sendSingleFreqIfValid() {
+        const n = parseIntSafe(sfreqEl?.value);
+        if (n == null) return;
+        errEl.textContent = "";
+        postEvbCmd("SetSingleFrequency", [n]);
+      }
+
+      function sendRangeFreqIfValid() {
+        const a = parseIntSafe(rfStartEl?.value);
+        const b = parseIntSafe(rfEndEl?.value);
+        if (a == null || b == null) return;
+
+        if (a > b) {
+          if (errEl) errEl.textContent = "Range freq start must be ≤ end";
+          return;
+        }
+        errEl.textContent = "";
+        postEvbCmd("SetRangeFrequency", [a, b]);
+      }
+
+      function attachSendOnCommit(el, fn) {
+        if (!el) return;
+        el.addEventListener("change", fn);
+        el.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            fn();
+            el.blur();
+          }
+        });
+      }
+
+      // Hook up EVB control widgets
+      attachSendOnCommit(dwellEl, sendDwellIfValid);
+      attachSendOnCommit(sfreqEl, sendSingleFreqIfValid);
+      attachSendOnCommit(rfStartEl, sendRangeFreqIfValid);
+      attachSendOnCommit(rfEndEl, sendRangeFreqIfValid);
 
       let gpsWatchId = null;
 
